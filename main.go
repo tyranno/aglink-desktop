@@ -11,6 +11,18 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+func mainWindowOptions() application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Title:            "teleclaude",
+		Width:            1100,
+		Height:           760,
+		MinWidth:         720,
+		MinHeight:        480,
+		BackgroundColour: application.NewRGB(238, 242, 255),
+		URL:              "/",
+	}
+}
+
 func main() {
 	app := application.New(application.Options{
 		Name:        "aglink-desktop",
@@ -26,15 +38,7 @@ func main() {
 		},
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "aglink-chat",
-		Width:            1100,
-		Height:           760,
-		MinWidth:         720,
-		MinHeight:        480,
-		BackgroundColour: application.NewRGB(238, 242, 255),
-		URL:              "/",
-	})
+	app.Window.NewWithOptions(mainWindowOptions())
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

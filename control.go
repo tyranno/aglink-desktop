@@ -39,15 +39,17 @@ type controlOut struct {
 
 // controlIn is what we send to teleclaude's control API.
 type controlIn struct {
-	Type   string          `json:"type"`
-	ReqID  string          `json:"reqID,omitempty"`
-	Text   string          `json:"text,omitempty"`
-	Origin string          `json:"origin,omitempty"`
-	Path   string          `json:"path,omitempty"`
-	ID     string          `json:"id,omitempty"`
-	Title  string          `json:"title,omitempty"`
-	Body   string          `json:"body,omitempty"`
-	Target json.RawMessage `json:"target,omitempty"`
+	Type    string          `json:"type"`
+	ReqID   string          `json:"reqID,omitempty"`
+	Text    string          `json:"text,omitempty"`
+	Caption string          `json:"caption,omitempty"`
+	Origin  string          `json:"origin,omitempty"`
+	Path    string          `json:"path,omitempty"`
+	ID      string          `json:"id,omitempty"`
+	Title   string          `json:"title,omitempty"`
+	Backend string          `json:"backend,omitempty"`
+	Body    string          `json:"body,omitempty"`
+	Target  json.RawMessage `json:"target,omitempty"`
 }
 
 // ControlService is the Wails-bound service the Svelte frontend calls. It keeps a
@@ -118,6 +120,10 @@ func (c *ControlService) connectOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Full stored-history replies can exceed coder/websocket's 32KiB default
+	// read limit, especially the shared Telegram stream. Match aglink-chat's
+	// control client so desktop can render the same persisted conversation data.
+	conn.SetReadLimit(8 << 20)
 	c.setConn(conn)
 	defer c.setConn(nil)
 	defer conn.Close(websocket.StatusNormalClosure, "")
@@ -218,6 +224,16 @@ func targetJSON(kind, project, id string) json.RawMessage {
 	return b
 }
 
+func uploadAttachmentControlIn(path, caption, kind, id string) controlIn {
+	return controlIn{
+		Type:    "upload_attachment",
+		Path:    path,
+		Caption: caption,
+		Origin:  "web",
+		Target:  targetJSON(kind, "", id),
+	}
+}
+
 // --- Bound methods (callable from Svelte) ---------------------------------
 
 // Connected reports whether the control API connection is currently up.
@@ -226,6 +242,12 @@ func (c *ControlService) Connected() bool { return c.connected.Load() }
 // ListConversations returns the /api/conversations payload as a JSON string.
 func (c *ControlService) ListConversations() (string, error) {
 	data, err := c.request(controlIn{Type: "list_conversations"})
+	return string(data), err
+}
+
+// GetActiveWorkers returns the running-worker payload as a JSON string.
+func (c *ControlService) GetActiveWorkers() (string, error) {
+	data, err := c.request(controlIn{Type: "get_active_workers"})
 	return string(data), err
 }
 
@@ -275,6 +297,21 @@ func (c *ControlService) WebDelete(id string) error {
 	return c.send(controlIn{Type: "web_delete", ID: id, Origin: "web"})
 }
 
+// SetChannelBackend sets a per-channel backend override. backend may be
+// "default" (inherit), "claude", or "codex".
+func (c *ControlService) SetChannelBackend(kind, id, backend string) (string, error) {
+	if kind == "" {
+		kind = "telegram"
+	}
+	data, err := c.request(controlIn{
+		Type:    "set_channel_backend",
+		Origin:  "web",
+		Target:  targetJSON(kind, "", id),
+		Backend: backend,
+	})
+	return string(data), err
+}
+
 // PickFolder opens a native OS folder picker and returns the chosen absolute
 // path ("" if cancelled) — the key desktop-app win over the browser, which can't
 // read real filesystem paths.
@@ -284,4 +321,57 @@ func (c *ControlService) PickFolder() (string, error) {
 		CanChooseFiles(false).
 		CanCreateDirectories(true).
 		PromptForSingleSelection()
+}
+
+// GetVersion returns the teleclaude version payload as a JSON string.
+func (c *ControlService) GetVersion() (string, error) {
+	data, err := c.request(controlIn{Type: "get_version"})
+	return string(data), err
+}
+
+// GetAux returns aglink helper-feature status as a JSON string.
+func (c *ControlService) GetAux() (string, error) {
+	data, err := c.request(controlIn{Type: "get_aux"})
+	return string(data), err
+}
+
+// GetConfig returns the raw config payload wrapper as a JSON string.
+func (c *ControlService) GetConfig() (string, error) {
+	data, err := c.request(controlIn{Type: "get_config"})
+	return string(data), err
+}
+
+// SetConfig writes raw config text and returns the control reply as a JSON string.
+func (c *ControlService) SetConfig(body string) (string, error) {
+	data, err := c.request(controlIn{Type: "set_config", Body: body})
+	return string(data), err
+}
+
+// GetSettings returns the structured settings schema as a JSON string.
+func (c *ControlService) GetSettings() (string, error) {
+	data, err := c.request(controlIn{Type: "get_settings"})
+	return string(data), err
+}
+
+// SetSettings updates structured settings and returns the control reply as a JSON string.
+func (c *ControlService) SetSettings(body string) (string, error) {
+	data, err := c.request(controlIn{Type: "set_settings", Body: body})
+	return string(data), err
+}
+
+// PickFile opens a native OS file picker and returns the chosen absolute path.
+func (c *ControlService) PickFile() (string, error) {
+	return application.Get().Dialog.OpenFile().
+		CanChooseFiles(true).
+		CanChooseDirectories(false).
+		PromptForSingleSelection()
+}
+
+// UploadAttachment relays a local file path through teleclaude's attachment pipeline.
+func (c *ControlService) UploadAttachment(path, caption, kind, id string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	return c.send(uploadAttachmentControlIn(path, caption, kind, id))
 }

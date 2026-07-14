@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +73,108 @@ func TestControlServiceConnectReadsLargeHistoryReplies(t *testing.T) {
 		t.Fatalf("connectOnce returned before delivering large reply: %v", err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for large reply delivery")
+	}
+}
+
+func setTestHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
+}
+
+func TestSaveClipboardImageWritesAttachmentsFile(t *testing.T) {
+	home := setTestHome(t)
+	payload := []byte("clipboard image bytes")
+	encoded := base64.StdEncoding.EncodeToString(payload)
+
+	path, err := (&ControlService{}).SaveClipboardImage("data:image/png;base64," + encoded)
+	if err != nil {
+		t.Fatalf("SaveClipboardImage returned error: %v", err)
+	}
+	defer os.Remove(path)
+
+	if filepath.Ext(path) != ".png" {
+		t.Fatalf("extension = %q, want .png", filepath.Ext(path))
+	}
+	wantDir := filepath.Join(home, ".teleclaude", "attachments")
+	if filepath.Dir(path) != wantDir {
+		t.Fatalf("dir = %q, want %q", filepath.Dir(path), wantDir)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("saved bytes = %q, want %q", got, payload)
+	}
+}
+
+func TestStageAttachmentCopiesIntoAttachmentsDir(t *testing.T) {
+	home := setTestHome(t)
+	src := filepath.Join(t.TempDir(), "picked.jpg")
+	payload := []byte("picked file bytes")
+	if err := os.WriteFile(src, payload, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	path, err := (&ControlService{}).StageAttachment(src)
+	if err != nil {
+		t.Fatalf("StageAttachment returned error: %v", err)
+	}
+	defer os.Remove(path)
+
+	wantDir := filepath.Join(home, ".teleclaude", "attachments")
+	if filepath.Dir(path) != wantDir {
+		t.Fatalf("dir = %q, want %q", filepath.Dir(path), wantDir)
+	}
+	if filepath.Ext(path) != ".jpg" {
+		t.Fatalf("extension = %q, want .jpg", filepath.Ext(path))
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read staged file: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("staged bytes = %q, want %q", got, payload)
+	}
+}
+
+func TestSaveClipboardImageRejectsNonImageDataURL(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte("plain text"))
+
+	if path, err := (&ControlService{}).SaveClipboardImage("data:text/plain;base64," + encoded); err == nil {
+		_ = os.Remove(path)
+		t.Fatal("SaveClipboardImage accepted a non-image data URL")
+	}
+}
+
+func TestPreviewAttachmentImageReturnsDataURLForLocalImage(t *testing.T) {
+	payload := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 1, 2, 3}
+	path := filepath.Join(t.TempDir(), "picked.png")
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatalf("write temp png: %v", err)
+	}
+
+	preview, err := (&ControlService{}).PreviewAttachmentImage(path)
+	if err != nil {
+		t.Fatalf("PreviewAttachmentImage returned error: %v", err)
+	}
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(payload)
+	if preview != want {
+		t.Fatalf("preview = %q, want %q", preview, want)
+	}
+}
+
+func TestPreviewAttachmentImageRejectsNonImages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(path, []byte("not an image"), 0o600); err != nil {
+		t.Fatalf("write temp text: %v", err)
+	}
+
+	if preview, err := (&ControlService{}).PreviewAttachmentImage(path); err == nil {
+		t.Fatalf("PreviewAttachmentImage accepted non-image file and returned %q", preview)
 	}
 }
 

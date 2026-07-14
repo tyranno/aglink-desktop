@@ -31,14 +31,15 @@
   let configText = $state("");
   let configMsg = $state("");
   let openMenuId = $state("");
-  let attachedFilePath = $state("");
-  let attachedFileName = $state("");
+  let attachments = $state([]);
+  const attachedFilePath = $derived(attachments.length > 0);
   let nowTick = $state(Date.now());
   let promptState = $state(null);
   let confirmState = $state(null);
 
   let promptResolver = null;
   let confirmResolver = null;
+  let attachmentSeq = 0;
   let textareaEl = $state(null);
   let logEl = $state(null);
 
@@ -305,8 +306,7 @@
     setUnread(key, false);
     openMenuId = "";
     statusNote = "";
-    attachedFilePath = "";
-    attachedFileName = "";
+    clearAttachments();
     currentMessages = [];
     applyCurrentDraft();
 
@@ -553,7 +553,10 @@
     const key = currentKey();
     const caption = composerText.trim();
 
-    if (attachedFilePath) {
+    if (attachments.length > 0) {
+      const pendingAttachments = attachments;
+      const attachmentNames = pendingAttachments.map((attachment) => attachment.name).join(", ");
+      const attachedFileName = attachmentNames;
       pushMessage({
         role: "user",
         text: caption ? `[첨부] ${attachedFileName}\n${caption}` : `[첨부] ${attachedFileName}`,
@@ -561,11 +564,11 @@
       });
       startWorking(key);
       clearComposer();
-      const filePath = attachedFilePath;
-      attachedFilePath = "";
-      attachedFileName = "";
+      clearAttachments();
       try {
-        await ControlService.UploadAttachment(filePath, caption, currentTarget.kind, currentTarget.id || "");
+        for (const attachment of pendingAttachments) {
+          await ControlService.UploadAttachment(attachment.path, caption, currentTarget.kind, currentTarget.id || "");
+        }
       } catch (error) {
         pushMessage({ role: "system", text: `첨부 업로드 실패: ${error}` });
         stopWorking(key);
@@ -648,18 +651,110 @@
 
   async function pickAttachment() {
     try {
-      const path = await ControlService.PickFile();
-      if (!path) return;
-      attachedFilePath = path;
-      attachedFileName = path.split(/[/\\]/).pop() || path;
+      const sourcePath = await ControlService.PickFile();
+      if (!sourcePath) return;
+      const name = sourcePath.split(/[/\\]/).pop() || sourcePath;
+      let previewURL = "";
+      try {
+        previewURL = await ControlService.PreviewAttachmentImage(sourcePath);
+      } catch {
+        previewURL = "";
+      }
+      const path = await ControlService.StageAttachment(sourcePath);
+      appendAttachment({ path, name, previewURL });
     } catch (error) {
       statusNote = `첨부 파일 선택 실패: ${error}`;
     }
   }
 
-  function clearAttachment() {
-    attachedFilePath = "";
-    attachedFileName = "";
+  function revokeAttachmentPreview(attachment) {
+    if (attachment?.previewIsObjectURL && attachment.previewURL) {
+      URL.revokeObjectURL(attachment.previewURL);
+    }
+  }
+
+  function appendAttachment({ path, name, previewURL = "", previewIsObjectURL = false }) {
+    attachments = [
+      ...attachments,
+      {
+        id: `${Date.now()}-${attachmentSeq++}`,
+        path,
+        name,
+        previewURL,
+        previewIsObjectURL,
+      },
+    ];
+  }
+
+  function clearAttachment(index) {
+    const attachment = attachments[index];
+    revokeAttachmentPreview(attachment);
+    attachments = attachments.filter((_, itemIndex) => itemIndex !== index);
+  }
+
+  function clearAttachments() {
+    for (const attachment of attachments) revokeAttachmentPreview(attachment);
+    attachments = [];
+  }
+
+  function clipboardImageExtension(mimeType) {
+    const normalized = String(mimeType || "").toLowerCase();
+    if (normalized === "image/jpeg" || normalized === "image/jpg") return "jpg";
+    if (normalized === "image/png") return "png";
+    if (normalized === "image/gif") return "gif";
+    if (normalized === "image/webp") return "webp";
+    if (normalized === "image/bmp") return "bmp";
+    if (normalized === "image/svg+xml") return "svg";
+    return "png";
+  }
+
+  function pastedImageName(file) {
+    if (file?.name) return file.name;
+    return `pasted-image.${clipboardImageExtension(file?.type)}`;
+  }
+
+  function imageFilesFromClipboard(event) {
+    const items = event.clipboardData?.items || [];
+    const files = [];
+    for (const item of items) {
+      if (item.type && item.type.indexOf("image/") === 0) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    return files;
+  }
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("failed to read clipboard image"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleComposerPaste(event) {
+    if (!currentTarget) return;
+    const files = imageFilesFromClipboard(event);
+    if (files.length === 0) return;
+
+    event.preventDefault();
+    try {
+      for (const file of files) {
+        const dataURL = await readFileAsDataURL(file);
+        const path = await ControlService.SaveClipboardImage(dataURL);
+        appendAttachment({
+          path,
+          name: pastedImageName(file),
+          previewURL: URL.createObjectURL(file),
+          previewIsObjectURL: true,
+        });
+      }
+      statusNote = "";
+    } catch (error) {
+      statusNote = `Clipboard image paste failed: ${error}`;
+    }
   }
 
   function handleComposerKeydown(event) {
@@ -793,6 +888,7 @@
       window.clearInterval(workerTimer);
       document.removeEventListener("click", clickAway);
       document.removeEventListener("keydown", onEscape);
+      clearAttachments();
     };
   });
 </script>
@@ -1040,13 +1136,13 @@
           {/if}
 
           <div class="shrink-0 border-t border-slate-200/80 bg-white/92 px-4 py-3 backdrop-blur">
-            {#if attachedFilePath}
-              <div class="mb-3 flex w-full items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            {#if false}
+              <div class="hidden">
                 <span class="rounded-full bg-emerald-100 px-2 py-1 font-semibold">첨부</span>
-                <span class="min-w-0 flex-1 truncate">{attachedFileName}</span>
+                <span class="min-w-0 flex-1 truncate">{attachments[0]?.name || ""}</span>
                 <button
                   class="grid h-7 w-7 place-items-center rounded-md border border-emerald-200 bg-white text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
-                  onclick={clearAttachment}
+                  onclick={clearAttachments}
                   title="첨부 제거"
                   aria-label="첨부 제거"
                 >
@@ -1066,6 +1162,30 @@
                 📎
               </button>
 
+              {#each attachments as attachment, index (attachment.id)}
+                {#if attachment.previewURL}
+                  <img
+                    alt=""
+                    class="h-8 w-8 shrink-0 self-center rounded-md border border-slate-300 object-cover"
+                    src={attachment.previewURL}
+                  />
+                {/if}
+                <span
+                  class="max-w-[160px] shrink-0 self-center truncate rounded-full bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600"
+                  title={attachment.name}
+                >
+                  {attachment.name}
+                </span>
+                <button
+                  class="grid h-6 w-6 shrink-0 place-items-center self-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                  onclick={() => clearAttachment(index)}
+                  title="첨부 취소"
+                  aria-label="첨부 취소"
+                >
+                  x
+                </button>
+              {/each}
+
               <textarea
                 bind:this={textareaEl}
                 class="min-h-[42px] flex-1 rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm leading-5 text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100"
@@ -1075,12 +1195,13 @@
                 rows="1"
                 oninput={(event) => setComposerValue(event.currentTarget.value)}
                 onkeydown={handleComposerKeydown}
+                onpaste={handleComposerPaste}
               ></textarea>
 
               <button
                 class="grid h-[42px] w-[46px] shrink-0 place-items-center rounded-md bg-blue-600 text-base font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 onclick={sendCurrent}
-                disabled={(!attachedFilePath && !canSend()) || !connected}
+                disabled={(attachments.length === 0 && !canSend()) || !connected}
                 title={attachedFilePath ? "업로드" : "전송"}
                 aria-label={attachedFilePath ? "업로드" : "전송"}
               >

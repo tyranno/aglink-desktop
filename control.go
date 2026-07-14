@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -234,6 +235,128 @@ func uploadAttachmentControlIn(path, caption, kind, id string) controlIn {
 	}
 }
 
+func clipboardImageExtension(mimeType string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png":
+		return ".png", true
+	case "image/jpeg", "image/jpg":
+		return ".jpg", true
+	case "image/gif":
+		return ".gif", true
+	case "image/webp":
+		return ".webp", true
+	case "image/bmp":
+		return ".bmp", true
+	case "image/svg+xml":
+		return ".svg", true
+	default:
+		return "", false
+	}
+}
+
+func attachmentImageMimeType(path string) (string, bool) {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(path))) {
+	case ".png":
+		return "image/png", true
+	case ".jpg", ".jpeg":
+		return "image/jpeg", true
+	case ".gif":
+		return "image/gif", true
+	case ".webp":
+		return "image/webp", true
+	case ".bmp":
+		return "image/bmp", true
+	case ".svg":
+		return "image/svg+xml", true
+	default:
+		return "", false
+	}
+}
+
+func attachmentsStagingDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home: %w", err)
+	}
+	return filepath.Join(home, ".teleclaude", "attachments"), nil
+}
+
+func writeStagedAttachmentBytes(data []byte, ext string) (string, error) {
+	if len(data) == 0 {
+		return "", errors.New("attachment is empty")
+	}
+	dir, err := attachmentsStagingDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create attachments dir: %w", err)
+	}
+	if ext == "" {
+		ext = ".bin"
+	}
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	file, err := os.CreateTemp(dir, "aglink-desktop-*"+ext)
+	if err != nil {
+		return "", fmt.Errorf("create staged attachment: %w", err)
+	}
+
+	path := file.Name()
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("write staged attachment: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("close staged attachment: %w", err)
+	}
+	return path, nil
+}
+
+func decodeClipboardImageDataURL(dataURL string) ([]byte, string, error) {
+	dataURL = strings.TrimSpace(dataURL)
+	if !strings.HasPrefix(dataURL, "data:") {
+		return nil, "", errors.New("clipboard image must be a data URL")
+	}
+
+	header, encoded, ok := strings.Cut(strings.TrimPrefix(dataURL, "data:"), ",")
+	if !ok {
+		return nil, "", errors.New("clipboard image data URL is missing data")
+	}
+	parts := strings.Split(header, ";")
+	mimeType := strings.ToLower(strings.TrimSpace(parts[0]))
+	if !strings.HasPrefix(mimeType, "image/") {
+		return nil, "", fmt.Errorf("clipboard data is not an image: %s", mimeType)
+	}
+	ext, ok := clipboardImageExtension(mimeType)
+	if !ok {
+		return nil, "", fmt.Errorf("unsupported clipboard image type: %s", mimeType)
+	}
+
+	base64Encoded := false
+	for _, part := range parts[1:] {
+		if strings.EqualFold(strings.TrimSpace(part), "base64") {
+			base64Encoded = true
+			break
+		}
+	}
+	if !base64Encoded {
+		return nil, "", errors.New("clipboard image data URL must be base64 encoded")
+	}
+
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, "", fmt.Errorf("decode clipboard image: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, "", errors.New("clipboard image is empty")
+	}
+	return data, ext, nil
+}
+
 // --- Bound methods (callable from Svelte) ---------------------------------
 
 // Connected reports whether the control API connection is currently up.
@@ -365,6 +488,51 @@ func (c *ControlService) PickFile() (string, error) {
 		CanChooseFiles(true).
 		CanChooseDirectories(false).
 		PromptForSingleSelection()
+}
+
+// SaveClipboardImage stores a pasted clipboard image data URL under teleclaude's
+// attachments directory so the control API will accept it for ingestion.
+func (c *ControlService) SaveClipboardImage(dataURL string) (string, error) {
+	data, ext, err := decodeClipboardImageDataURL(dataURL)
+	if err != nil {
+		return "", err
+	}
+	return writeStagedAttachmentBytes(data, ext)
+}
+
+// StageAttachment copies a native picked file into teleclaude's attachments
+// directory before UploadAttachment asks teleclaude to ingest it.
+func (c *ControlService) StageAttachment(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("attachment path is empty")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read attachment: %w", err)
+	}
+	return writeStagedAttachmentBytes(data, filepath.Ext(path))
+}
+
+// PreviewAttachmentImage returns a browser-renderable data URL for a local image
+// chosen through the native file picker.
+func (c *ControlService) PreviewAttachmentImage(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("attachment path is empty")
+	}
+	mimeType, ok := attachmentImageMimeType(path)
+	if !ok {
+		return "", fmt.Errorf("attachment is not a previewable image: %s", filepath.Ext(path))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read attachment preview: %w", err)
+	}
+	if len(data) == 0 {
+		return "", errors.New("attachment image is empty")
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
 // UploadAttachment relays a local file path through teleclaude's attachment pipeline.

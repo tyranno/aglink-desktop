@@ -116,7 +116,7 @@
       >
         {#if paneConversationMeta(p.target)}
           <span class={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${paneConversationMeta(p.target).kind === "web" ? "bg-blue-100 text-blue-700" : "bg-sky-100 text-sky-700"}`}>
-            {paneConversationMeta(p.target).kind === "web" ? "웹" : "텔레그램"}
+            {paneConversationMeta(p.target).kind === "web" ? "로컬" : "텔레그램"}
           </span>
           <div class="flex min-w-0 flex-1 items-center gap-2">
             <div class="min-w-0 truncate text-sm font-semibold text-slate-900">{paneConversationMeta(p.target).title}</div>

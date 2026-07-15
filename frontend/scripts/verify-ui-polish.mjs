@@ -178,6 +178,13 @@ assert(pane.includes("function renderMarkdownInto(") && pane.includes("use:rende
 assert(pane.match(/\{#if message\.role === "user"\}[\s\S]{0,200}whitespace-pre-wrap break-words text-\[13px\] leading-4[\s\S]{0,200}\{:else\}[\s\S]{0,200}markdown-body/), "user messages must stay plain text while other roles get markdown");
 assert(pane.includes(":global(.markdown-body pre)") && pane.includes(":global(.markdown-body code)"), "markdown code blocks/inline code must have their own styling, not fall back to plain paragraph text");
 
+// "웹 채널" was renamed to "로컬 채널" throughout (텔레그램 채널 stays as-is), and a
+// group's own name must read at least as prominently as a channel name, not
+// smaller/muted, so groups and channels are easy to tell apart at a glance.
+assert(app.includes(">로컬 채널<"), "the local channel section label must use the new terminology");
+assert(!all.includes("웹 채널") && !all.includes("웹 대화"), "the old 웹 채널/웹 대화 terminology must not remain anywhere");
+assert(app.includes('text-sm font-bold text-slate-800">{group.name}'), "a group's name must be at least as visually prominent as a channel name (text-sm, not smaller/muted)");
+
 if (process.exitCode) {
   process.exit(process.exitCode);
 }

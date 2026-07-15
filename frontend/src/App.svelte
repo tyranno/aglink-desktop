@@ -228,7 +228,7 @@
   }
 
   async function newWebConversation() {
-    const title = await askText("새 웹 대화", "선택 사항: 제목", "");
+    const title = await askText("새 로컬 대화", "선택 사항: 제목", "");
     if (title === null) return;
     try {
       await ControlService.WebNew(title.trim());
@@ -632,7 +632,7 @@
                   ondrop={(event) => handleGroupDrop(event, UNGROUPED_DROP_ZONE)}
                   title="대화를 여기로 드래그하면 그룹에서 빠집니다"
                 >
-                  <div class="flex-1 text-[11px] font-bold tracking-[0.04em] text-slate-500">웹 채널</div>
+                  <div class="flex-1 text-[11px] font-bold tracking-[0.04em] text-slate-500">로컬 채널</div>
                   <button
                     class="grid h-5 w-5 shrink-0 place-items-center rounded text-[13px] font-bold leading-none text-slate-400 hover:bg-slate-200 hover:text-slate-700"
                     onclick={newWebGroup}
@@ -645,7 +645,7 @@
                 <div class="space-y-1 border-l-2 border-slate-200 pl-2">
                   {#if chat.webConvs.length === 0}
                     <div class="rounded-md border border-dashed border-slate-300 bg-white/70 px-3 py-4 text-sm text-slate-500">
-                      아직 웹 대화가 없습니다. "새 대화"로 시작하세요.
+                      아직 로컬 대화가 없습니다. "새 대화"로 시작하세요.
                     </div>
                   {/if}
 
@@ -659,7 +659,7 @@
                       ondragleave={() => handleGroupDragLeave(group.id)}
                       ondrop={(event) => handleGroupDrop(event, group.id)}
                     >
-                      <div class="relative flex h-8 items-center gap-1 rounded-md px-1 hover:bg-slate-100" data-conv-menu>
+                      <div class="relative flex h-9 items-center gap-1 rounded-md px-1 hover:bg-slate-100" data-conv-menu>
                         <button
                           class="grid h-6 w-6 shrink-0 place-items-center rounded text-slate-500 hover:bg-slate-200"
                           onclick={() => toggleWebGroupCollapsed(group.id)}
@@ -668,7 +668,7 @@
                         >
                           {group.collapsed ? "▸" : "▾"}
                         </button>
-                        <div class="min-w-0 flex-1 truncate text-[12px] font-semibold text-slate-600">{group.name}</div>
+                        <div class="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{group.name}</div>
                         <span class="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{groupConvs.length}</span>
                         <button
                           class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-500 hover:bg-slate-200"

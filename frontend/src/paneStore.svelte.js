@@ -49,6 +49,8 @@ export const chat = $state({
   webGroups: [],
   webGroupOf: new Map(),
   dragOverGroupId: "",
+  draggingGroupId: null,
+  dragOverGroupReorder: null,
   progressByKey: new Map(),
   progressPopupPaneId: null,
 });
@@ -131,6 +133,31 @@ export function setConversationGroup(convId, groupId) {
   else next.delete(convId);
   chat.webGroupOf = next;
   persistWebGroups();
+}
+
+export function reorderWebGroups(sourceGroupId, targetGroupId) {
+  if (!sourceGroupId || !targetGroupId || sourceGroupId === targetGroupId) return;
+  const groups = [...chat.webGroups];
+  const fromIndex = groups.findIndex((group) => group.id === sourceGroupId);
+  const toIndex = groups.findIndex((group) => group.id === targetGroupId);
+  if (fromIndex === -1 || toIndex === -1) return;
+  const [moved] = groups.splice(fromIndex, 1);
+  groups.splice(toIndex, 0, moved);
+  chat.webGroups = groups;
+  persistWebGroups();
+}
+
+export function handleGroupHeaderDragStart(event, groupId) {
+  chat.draggingGroupId = groupId;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", groupId);
+  }
+}
+
+export function handleGroupHeaderDragEnd() {
+  chat.draggingGroupId = null;
+  chat.dragOverGroupReorder = null;
 }
 
 export function webConvsInGroup(groupId) {
@@ -476,6 +503,13 @@ export function handleConversationDragEnd() {
 }
 
 export function handleGroupDragOver(event, groupId) {
+  if (chat.draggingGroupId) {
+    if (groupId === UNGROUPED_DROP_ZONE || chat.draggingGroupId === groupId) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    chat.dragOverGroupReorder = groupId;
+    return;
+  }
   if (chat.draggingConversation?.kind !== "web") return;
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
@@ -484,11 +518,19 @@ export function handleGroupDragOver(event, groupId) {
 
 export function handleGroupDragLeave(groupId) {
   if (chat.dragOverGroupId === groupId) chat.dragOverGroupId = "";
+  if (chat.dragOverGroupReorder === groupId) chat.dragOverGroupReorder = null;
 }
 
 export function handleGroupDrop(event, groupId) {
   event.preventDefault();
   event.stopPropagation();
+  if (chat.draggingGroupId) {
+    const sourceGroupId = chat.draggingGroupId;
+    chat.dragOverGroupReorder = null;
+    chat.draggingGroupId = null;
+    if (groupId !== UNGROUPED_DROP_ZONE) reorderWebGroups(sourceGroupId, groupId);
+    return;
+  }
   const target = chat.draggingConversation;
   chat.dragOverGroupId = "";
   chat.draggingConversation = null;

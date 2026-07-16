@@ -34,6 +34,8 @@
     handleGroupDragOver,
     handleGroupDragLeave,
     handleGroupDrop,
+    handleGroupHeaderDragStart,
+    handleGroupHeaderDragEnd,
     UNGROUPED_DROP_ZONE,
     closeProgressPopup,
   } from "./paneStore.svelte.js";
@@ -653,13 +655,21 @@
                     {@const groupConvs = webConvsInGroup(group.id)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class={`rounded-md ${chat.dragOverGroupId === group.id ? "ring-2 ring-blue-400 bg-blue-50" : ""}`}
+                      class={`rounded-md ${chat.dragOverGroupId === group.id ? "ring-2 ring-blue-400 bg-blue-50" : ""} ${chat.dragOverGroupReorder === group.id ? "ring-2 ring-amber-400 bg-amber-50" : ""} ${chat.draggingGroupId === group.id ? "opacity-50" : ""}`}
                       ondragenter={(event) => handleGroupDragOver(event, group.id)}
                       ondragover={(event) => handleGroupDragOver(event, group.id)}
                       ondragleave={() => handleGroupDragLeave(group.id)}
                       ondrop={(event) => handleGroupDrop(event, group.id)}
                     >
-                      <div class="relative flex h-9 items-center gap-1 rounded-md px-1 hover:bg-slate-100" data-conv-menu>
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <div
+                        class="relative flex h-9 cursor-grab items-center gap-1 rounded-md px-1 hover:bg-slate-100 active:cursor-grabbing"
+                        data-conv-menu
+                        draggable="true"
+                        ondragstart={(event) => handleGroupHeaderDragStart(event, group.id)}
+                        ondragend={handleGroupHeaderDragEnd}
+                        title="드래그해서 그룹 순서 변경"
+                      >
                         <button
                           class="grid h-6 w-6 shrink-0 place-items-center rounded text-slate-500 hover:bg-slate-200"
                           onclick={() => toggleWebGroupCollapsed(group.id)}

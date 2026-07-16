@@ -31,6 +31,7 @@
     handlePaneDrop,
     progressForTarget,
     toggleProgressPopup,
+    paneColor,
   } from "./paneStore.svelte.js";
   import { renderMarkdown } from "./markdown.js";
 
@@ -76,8 +77,8 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class={node.direction === "column"
-            ? "h-1 w-full shrink-0 cursor-row-resize bg-slate-200 hover:bg-blue-300"
-            : "w-1 shrink-0 cursor-col-resize bg-slate-200 hover:bg-blue-300"}
+            ? "h-px w-full shrink-0 cursor-row-resize bg-slate-200 hover:bg-blue-300"
+            : "w-px shrink-0 cursor-col-resize bg-slate-200 hover:bg-blue-300"}
           onmousedown={(event) => startSplitResize(event, node.id, node.direction, index)}
         ></div>
       {/if}
@@ -88,11 +89,12 @@
   </div>
 {:else}
   {@const p = pane(node.paneId)}
+  {@const color = chat.panes.length > 1 ? paneColor(p?.id) : null}
   {#if p}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <main
-      class={`relative flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden ${chat.panes.length > 1 && p.id === chat.focusedPaneId ? "ring-1 ring-inset ring-blue-300" : ""}`}
+      class={`relative flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden ${color ? `border ${color.border}` : ""} ${chat.panes.length > 1 && p.id === chat.focusedPaneId ? "ring-2 ring-inset ring-blue-400" : ""}`}
       onclick={() => focusPane(p.id)}
       ondragover={(event) => handlePaneDragOver(event, p.id)}
       ondragleave={() => handlePaneDragLeave(p.id)}
@@ -108,12 +110,15 @@
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="flex h-10 shrink-0 cursor-grab items-center gap-2 border-b border-slate-200 bg-white/75 px-4 backdrop-blur active:cursor-grabbing"
+        class={`flex h-10 shrink-0 cursor-grab items-center gap-2 border-b border-slate-200 px-4 backdrop-blur active:cursor-grabbing ${color ? color.headerBg : "bg-white/75"}`}
         draggable="true"
         ondragstart={(event) => handlePaneDragStart(event, p.id)}
         ondragend={handlePaneDragEnd}
         title="드래그해서 다른 패널 가장자리로 재배치"
       >
+        {#if color}
+          <span class={`h-2 w-2 shrink-0 rounded-full ${color.dot}`}></span>
+        {/if}
         {#if paneConversationMeta(p.target)}
           <span class={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${paneConversationMeta(p.target).kind === "web" ? "bg-blue-100 text-blue-700" : "bg-sky-100 text-sky-700"}`}>
             {paneConversationMeta(p.target).kind === "web" ? "로컬" : "텔레그램"}

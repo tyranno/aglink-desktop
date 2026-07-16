@@ -509,6 +509,24 @@ export function focusedPane() {
   return pane(chat.focusedPaneId) || chat.panes[0] || null;
 }
 
+// Distinct per-pane accent so panes stay easy to tell apart at a glance when
+// several are open side by side. Assigned by a pane's left-to-right/
+// top-to-bottom position in the layout tree (not its id), so the first split
+// is always the same color, the second is always the next color, etc.
+const PANE_COLORS = [
+  { border: "border-sky-300", headerBg: "bg-sky-50/80", dot: "bg-sky-400" },
+  { border: "border-violet-300", headerBg: "bg-violet-50/80", dot: "bg-violet-400" },
+  { border: "border-amber-300", headerBg: "bg-amber-50/80", dot: "bg-amber-400" },
+  { border: "border-emerald-300", headerBg: "bg-emerald-50/80", dot: "bg-emerald-400" },
+  { border: "border-rose-300", headerBg: "bg-rose-50/80", dot: "bg-rose-400" },
+  { border: "border-cyan-300", headerBg: "bg-cyan-50/80", dot: "bg-cyan-400" },
+];
+
+export function paneColor(paneId) {
+  const index = collectLeafIds(chat.layout).indexOf(paneId);
+  return PANE_COLORS[(index < 0 ? 0 : index) % PANE_COLORS.length];
+}
+
 export function updatePane(paneId, patch) {
   chat.panes = chat.panes.map((item) => (item.id === paneId ? { ...item, ...patch } : item));
 }

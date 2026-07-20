@@ -402,6 +402,7 @@
 <style>
   :global(.markdown-body) {
     white-space: normal;
+    overflow-x: auto;
   }
   :global(.markdown-body > :first-child) {
     margin-top: 0;
@@ -452,6 +453,25 @@
     margin: 8px 0;
     border: 0;
     border-top: 1px solid #e2e8f0;
+  }
+  :global(.markdown-body table) {
+    margin: 0 0 6px;
+    border-collapse: collapse;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  :global(.markdown-body th),
+  :global(.markdown-body td) {
+    padding: 4px 6px;
+    border: 1px solid #cbd5e1;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  :global(.markdown-body th) {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #334155;
   }
   :global(.markdown-body a) {
     color: #1d4ed8;

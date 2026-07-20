@@ -1,6 +1,5 @@
 // Minimal Markdown → DOM renderer for chat bubbles (ported from aglink-chat's
-// web/markdown.js, same algorithm/tests — kept in sync deliberately rather
-// than shared, since the two frontends don't share a build).
+// web/markdown.js and kept local because the two frontends don't share a build).
 //
 // Worker output is Markdown, and showing it raw meant reading literal ``` and
 // ** in the chat. Every piece of text goes into the document through
@@ -67,6 +66,34 @@ const RULE_RE = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
 const BULLET_RE = /^\s*[-*+]\s+(.*)$/;
 const ORDERED_RE = /^\s*\d+[.)]\s+(.*)$/;
 const QUOTE_RE = /^\s*>\s?(.*)$/;
+const TABLE_SEPARATOR_RE = /^:?-{3,}:?$/;
+
+function splitTableRow(line) {
+  if (!String(line).includes("|")) return null;
+  let body = String(line).trim();
+  if (body.startsWith("|")) body = body.slice(1);
+  if (body.endsWith("|")) body = body.slice(0, -1);
+  const cells = body.split("|").map((cell) => cell.trim());
+  return cells.length >= 2 ? cells : null;
+}
+
+function isTableSeparator(line, width) {
+  const cells = splitTableRow(line);
+  return !!cells && cells.length === width && cells.every((cell) => TABLE_SEPARATOR_RE.test(cell));
+}
+
+function isTableStart(lines, index) {
+  const header = splitTableRow(lines[index] || "");
+  return !!header && isTableSeparator(lines[index + 1] || "", header.length);
+}
+
+function appendTableCells(doc, tr, tag, cells) {
+  cells.forEach((cell) => {
+    const el = doc.createElement(tag);
+    renderInline(doc, cell, el);
+    tr.appendChild(el);
+  });
+}
 
 export function renderMarkdown(text, doc) {
   doc = doc || (typeof document !== "undefined" ? document : undefined);
@@ -115,6 +142,30 @@ export function renderMarkdown(text, doc) {
       continue;
     }
 
+    if (isTableStart(lines, i)) {
+      const header = splitTableRow(lines[i]);
+      i += 2;
+      const table = doc.createElement("table");
+      const thead = doc.createElement("thead");
+      const headRow = doc.createElement("tr");
+      appendTableCells(doc, headRow, "th", header);
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const tbody = doc.createElement("tbody");
+      while (i < lines.length && lines[i].trim()) {
+        const cells = splitTableRow(lines[i]);
+        if (!cells || cells.length !== header.length) break;
+        const row = doc.createElement("tr");
+        appendTableCells(doc, row, "td", cells);
+        tbody.appendChild(row);
+        i++;
+      }
+      table.appendChild(tbody);
+      frag.appendChild(table);
+      continue;
+    }
+
     const bullet = BULLET_RE.test(line);
     if (bullet || ORDERED_RE.test(line)) {
       const re = bullet ? BULLET_RE : ORDERED_RE;
@@ -134,7 +185,7 @@ export function renderMarkdown(text, doc) {
     while (
       i < lines.length && lines[i].trim() &&
       !FENCE_RE.test(lines[i]) && !HEADING_RE.test(lines[i]) && !RULE_RE.test(lines[i]) &&
-      !QUOTE_RE.test(lines[i]) && !BULLET_RE.test(lines[i]) && !ORDERED_RE.test(lines[i])
+      !QUOTE_RE.test(lines[i]) && !isTableStart(lines, i) && !BULLET_RE.test(lines[i]) && !ORDERED_RE.test(lines[i])
     ) para.push(lines[i++]);
     const p = doc.createElement("p");
     para.forEach((l, n) => {

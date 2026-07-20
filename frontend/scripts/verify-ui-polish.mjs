@@ -208,6 +208,7 @@ assert(pane.includes('import { renderMarkdown } from "./markdown.js"'), "PaneNod
 assert(pane.includes("function renderMarkdownInto(") && pane.includes("use:renderMarkdownInto={message.text}"), "non-user message bubbles must be rendered through the markdown action");
 assert(pane.match(/\{#if message\.role === "user"\}[\s\S]{0,200}whitespace-pre-wrap break-words text-\[13px\] leading-4[\s\S]{0,200}\{:else\}[\s\S]{0,200}markdown-body/), "user messages must stay plain text while other roles get markdown");
 assert(pane.includes(":global(.markdown-body pre)") && pane.includes(":global(.markdown-body code)"), "markdown code blocks/inline code must have their own styling, not fall back to plain paragraph text");
+assert(pane.includes(":global(.markdown-body table)") && pane.includes(":global(.markdown-body th)") && pane.includes(":global(.markdown-body td)"), "markdown tables must have readable table/cell styling");
 
 // "웹 채널" was renamed to "로컬 채널" throughout (텔레그램 채널 stays as-is), and a
 // group's own name must read at least as prominently as a channel name, not
